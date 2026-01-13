@@ -3,9 +3,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DatabaseConnection {
-    private static final String URL = "jdbc:mysql://localhost:3306/almoxarifado";
-    private static final String USER = "root";
-    private static final String PASSWORD = "123456789"; // Coloque sua senha do MySQL aqui
+    private static final String URL = "";
+    private static final String USER = "";
+    private static final String PASSWORD = ""; // Coloque sua senha do MySQL aqui
 
     public static Connection getConnection() throws SQLException {
         return DriverManager.getConnection(URL, USER, PASSWORD);
