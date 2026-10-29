@@ -1,0 +1,103 @@
+name: CI - Quality Gates (QAOps)
+
+# Dispara a cada push e pull request para a branch principal.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualidade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # Credenciais NUNCA ficam no repositório: a senha vem de um GitHub Secret.
+      DB_URL: jdbc:mysql://127.0.0.1:3306/almoxarifado_test?useSSL=false&allowPublicKeyRetrieval=true
+      DB_USER: root
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+
+    steps:
+      - name: Obter código
+        uses: actions/checkout@v4
+
+      - name: Configurar JDK 21 e cache do Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Verificar segredo DB_PASSWORD
+        run: |
+          if [ -z "$DB_PASSWORD" ]; then
+            echo "::error::Segredo DB_PASSWORD não configurado. Settings > Secrets and variables > Actions > New repository secret."
+            exit 1
+          fi
+
+      - name: Subir MySQL 8 para os testes de integração
+        run: |
+          docker run -d --name mysql-ci \
+            -e MYSQL_ROOT_PASSWORD="$DB_PASSWORD" \
+            -e MYSQL_DATABASE=almoxarifado_test \
+            -p 3306:3306 mysql:8.0
+          for i in $(seq 1 40); do
+            if docker exec mysql-ci mysqladmin ping -h 127.0.0.1 -uroot -p"$DB_PASSWORD" --silent; then
+              echo "MySQL pronto"; exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::MySQL não ficou pronto a tempo"; docker logs mysql-ci; exit 1
+
+      # ---------------- GATE 1: BUILD ----------------
+      - name: "Gate 1 - Build (compilação e empacotamento)"
+        id: gate_build
+        run: mvn -B -ntp clean package -DskipTests
+
+      # ---------------- GATE 2: ANÁLISE ESTÁTICA ----------------
+      - name: "Gate 2 - Análise estática (Checkstyle)"
+        id: gate_estatica
+        run: mvn -B -ntp checkstyle:check
+
+      # ---------------- GATE 3: TESTES ----------------
+      - name: "Gate 3 - Testes unitários e de integração"
+        id: gate_testes
+        run: mvn -B -ntp verify
+
+      # ---------------- GATE 4: COBERTURA ----------------
+      - name: "Gate 4 - Cobertura mínima de 80% (JaCoCo)"
+        id: gate_cobertura
+        run: mvn -B -ntp jacoco:check
+
+      # ---------------- EVIDÊNCIAS ----------------
+      - name: Publicar relatórios e artefato
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencias-qualidade
+          if-no-files-found: warn
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+            target/site/jacoco/
+            target/checkstyle-result.xml
+            target/almoxarifado.jar
+
+      - name: Resumo dos gates
+        if: always()
+        run: |
+          {
+            echo "## Resultado dos Quality Gates"
+            echo ""
+            echo "| Gate | Resultado |"
+            echo "|------|-----------|"
+            echo "| 1 - Build | ${{ steps.gate_build.outcome }} |"
+            echo "| 2 - Análise estática | ${{ steps.gate_estatica.outcome }} |"
+            echo "| 3 - Testes | ${{ steps.gate_testes.outcome }} |"
+            echo "| 4 - Cobertura | ${{ steps.gate_cobertura.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
