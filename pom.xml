@@ -44,7 +44,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.5.2</version>
+        <version>3.6.1</version>
       </plugin>
 
       <!-- Testes de integração: *IT.java (exigem MySQL; DB_URL/DB_USER/DB_PASSWORD) -->
